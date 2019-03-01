@@ -1,0 +1,4 @@
+
+docker build -t speed-agility .
+
+docker run -p 0:80 -d speed-agility

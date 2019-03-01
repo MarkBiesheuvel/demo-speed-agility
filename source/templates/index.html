@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en-US">
+  <title>Demo - Speed & Agility</title>
+  <body>
+    <h1>Users</h1>
+    <ul>
+      {% for id, user in users %}
+      <li>
+        <a href="{{ id }}">{{ user.name }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>

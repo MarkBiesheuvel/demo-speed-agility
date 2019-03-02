@@ -1,11 +1,18 @@
 from flask import Flask, render_template, abort
+import os
 import json
 
 # Start the app
 app = Flask(__name__)
 
 # Load users from file (imagine this is a database connection)
-users = json.loads(open('data/users.json').read())
+users_file = os.path.join(
+    os.getcwd(),
+    os.path.dirname(__file__),
+    'data',
+    'users.json'
+)
+users = json.loads(open(users_file).read())
 
 
 # Website root, showing an overview of all users

@@ -48,6 +48,12 @@ Resources:
                 Action:
                   - 'codebuild:BatchGetBuilds'
                   - 'codebuild:StartBuild'
+              -
+                Effect: Allow
+                Resource: '*'
+                Action:
+                  - 'ecr:DescribeImages'
+                  - 'ecs:*'
   BuildRole:
     Type: AWS::IAM::Role
     Properties:
@@ -184,7 +190,7 @@ Resources:
           Name: Build
           Actions:
             -
-              Name: Production
+              Name: Build
               ActionTypeId:
                 Category: Build
                 Owner: AWS
@@ -194,6 +200,24 @@ Resources:
                 ProjectName: !Ref BuildProject
               InputArtifacts:
                 - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+        -
+          Name: Deploy
+          Actions:
+            -
+              Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ECS
+              Configuration:
+                ClusterName: cluster
+                ServiceName: test
+                # FileName: 'BuildArtifact::imagedefinitions.json'
+              InputArtifacts:
+                - Name: BuildArtifact
   BuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -213,7 +237,7 @@ Resources:
             Value: !Ref 'AWS::StackName'
           -
             Type: PLAINTEXT
-            Name: REPOSITORY_URL
+            Name: REPOSITORY_URI
             Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DockerRepository}'
       Source:
         Type: CODEPIPELINE
@@ -222,14 +246,21 @@ Resources:
           phases:
             pre_build:
               commands:
-                - 'cd source'
+                - $(aws ecr get-login --no-include-email)
+                - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+                - IMAGE_TAG=${COMMIT_HASH:=latest}
             build:
               commands:
-                - 'docker build -t $APPLICATION_NAME .'
-                - 'docker tag $APPLICATION_NAME $REPOSITORY_URL:latest'
-                - 'docker tag $APPLICATION_NAME $REPOSITORY_URL:$CODEBUILD_RESOLVED_SOURCE_VERSION'
+                - echo Build started on `date`
+                - docker pull $REPOSITORY_URI:latest || exit 0
+                - docker build -t $REPOSITORY_URI:latest ./source
+                - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
             post_build:
               commands:
-                - '`aws ecr get-login --no-include-email`'
-                - 'docker push $REPOSITORY_URL:latest'
-                - 'docker push $REPOSITORY_URL:$CODEBUILD_RESOLVED_SOURCE_VERSION'
+                - echo Build completed on `date`
+                - docker push $REPOSITORY_URI:latest
+                - docker push $REPOSITORY_URI:$IMAGE_TAG
+                - printf '[{"name":"%s","imageUri":"%s"}]' $APPLICATION_NAME $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+          artifacts:
+              files:
+                - imagedefinitions.json

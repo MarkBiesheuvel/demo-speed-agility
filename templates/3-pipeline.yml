@@ -200,8 +200,6 @@ Resources:
                 ProjectName: !Ref BuildProject
               InputArtifacts:
                 - Name: SourceArtifact
-              OutputArtifacts:
-                - Name: BuildArtifact
         -
           Name: Deploy
           Actions:
@@ -215,9 +213,6 @@ Resources:
               Configuration:
                 ClusterName: cluster
                 ServiceName: test
-                # FileName: 'BuildArtifact::imagedefinitions.json'
-              InputArtifacts:
-                - Name: BuildArtifact
   BuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -260,7 +255,3 @@ Resources:
                 - echo Build completed on `date`
                 - docker push $REPOSITORY_URI:latest
                 - docker push $REPOSITORY_URI:$IMAGE_TAG
-                - printf '[{"name":"%s","imageUri":"%s"}]' $APPLICATION_NAME $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
-          artifacts:
-              files:
-                - imagedefinitions.json

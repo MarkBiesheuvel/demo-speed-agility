@@ -1,0 +1,235 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Pipeline to deploy Docker container
+
+Resources:
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: codepipeline.amazonaws.com
+      Policies:
+        -
+          PolicyName: InlinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              -
+                Effect: Allow
+                Resource: '*'
+                Action: 'iam:PassRole'
+              -
+                Effect: Allow
+                Resource: '*'
+                Action:
+                  - 'codecommit:CancelUploadArchive'
+                  - 'codecommit:GetBranch'
+                  - 'codecommit:GetCommit'
+                  - 'codecommit:GetUploadArchiveStatus'
+                  - 'codecommit:UploadArchive'
+              -
+                Effect: Allow
+                Resource: '*'
+                Action:
+                  - 's3:PutObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:GetObject'
+                  - 's3:GetBucketVersioning'
+              -
+                Effect: Allow
+                Resource: '*'
+                Action:
+                  - 'codebuild:BatchGetBuilds'
+                  - 'codebuild:StartBuild'
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: codebuild.amazonaws.com
+      Policies:
+        -
+          PolicyName: InlinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              -
+                Effect: Allow
+                Resource: !Sub '${ArtifactBucket.Arn}/*'
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+              -
+                Effect: Allow
+                Resource: '*'
+                Action:
+                  - ecr:GetAuthorizationToken
+              -
+                Effect: Allow
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${DockerRepository}'
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:GetRepositoryPolicy
+                  - ecr:DescribeRepositories
+                  - ecr:ListImages
+                  - ecr:DescribeImages
+                  - ecr:BatchGetImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                  - ecr:PutImage
+              -
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+  TriggerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: events.amazonaws.com
+      Policies:
+        -
+          PolicyName: InlinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              -
+                Effect: Allow
+                Resource: '*'
+                Action: codepipeline:StartPipelineExecution
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+  GitRepository:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref 'AWS::StackName'
+  DockerRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref 'AWS::StackName'
+  Trigger:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !GetAtt GitRepository.Arn
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - master
+      State: ENABLED
+      Targets:
+        -
+          Id: pipeline
+          Arn: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
+          RoleArn: !GetAtt TriggerRole.Arn
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Ref 'AWS::StackName'
+      ArtifactStore:
+        Location: !Ref ArtifactBucket
+        Type: S3
+      RestartExecutionOnUpdate: True
+      RoleArn: !GetAtt PipelineRole.Arn
+      Stages:
+        -
+          Name: Source
+          Actions:
+            -
+              Name: Repository
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: CodeCommit
+              Configuration:
+                RepositoryName: !GetAtt GitRepository.Name
+                BranchName: master
+                PollForSourceChanges: False
+              OutputArtifacts:
+                - Name: SourceArtifact
+        -
+          Name: Build
+          Actions:
+            -
+              Name: Production
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref BuildProject
+              InputArtifacts:
+                - Name: SourceArtifact
+  BuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      TimeoutInMinutes: 5
+      ServiceRole: !GetAtt BuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/docker:18.09.0-1.7.0
+        PrivilegedMode: True
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          -
+            Type: PLAINTEXT
+            Name: APPLICATION_NAME
+            Value: !Ref 'AWS::StackName'
+          -
+            Type: PLAINTEXT
+            Name: REPOSITORY_URL
+            Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DockerRepository}'
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - 'cd source'
+            build:
+              commands:
+                - 'docker build -t $APPLICATION_NAME .'
+                - 'docker tag $APPLICATION_NAME $REPOSITORY_URL:latest'
+                - 'docker tag $APPLICATION_NAME $REPOSITORY_URL:$CODEBUILD_RESOLVED_SOURCE_VERSION'
+            post_build:
+              commands:
+                - '`aws ecr get-login --no-include-email`'
+                - 'docker push $REPOSITORY_URL:latest'
+                - 'docker push $REPOSITORY_URL:$CODEBUILD_RESOLVED_SOURCE_VERSION'

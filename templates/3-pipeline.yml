@@ -134,6 +134,42 @@ Resources:
                 Effect: Allow
                 Resource: '*'
                 Action: codepipeline:StartPipelineExecution
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+      Policies:
+        -
+          PolicyName: InlinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              -
+                Effect: Allow
+                Resource: '*'
+                Action:
+                  - ecr:GetAuthorizationToken
+              -
+                Effect: Allow
+                Resource: !Sub 'arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${DockerRepository}'
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+              -
+                Effect: Allow
+                Resource: arn:aws:logs:*:*:*
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
   ArtifactBucket:
     Type: AWS::S3::Bucket
   GitRepository:
@@ -282,7 +318,7 @@ Resources:
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 100
-      DesiredCount: 2
+      DesiredCount: 1
       # HealthCheckGracePeriodSeconds: Integer
       LaunchType: FARGATE
       # LoadBalancers:
@@ -306,7 +342,7 @@ Resources:
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
-      ExecutionRoleArn: 'arn:aws:iam::312701731826:role/ecsTaskExecutionRole' # TODO: replace
+      ExecutionRoleArn: !GetAtt TaskRole.Arn
       ContainerDefinitions:
         -
           Name: !Ref 'AWS::StackName'

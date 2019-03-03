@@ -315,23 +315,24 @@ Resources:
     Type: AWS::ECS::Service
     Properties:
       Cluster: !Ref Cluster
+      LaunchType: FARGATE
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 100
-      DesiredCount: 1
-      # HealthCheckGracePeriodSeconds: Integer
-      LaunchType: FARGATE
-      # LoadBalancers:
-        # - Load Balancer Objects, ...
+      DesiredCount: 2
+      HealthCheckGracePeriodSeconds: 10
+      LoadBalancers:
+        -
+          ContainerName: !Ref 'AWS::StackName'
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
           SecurityGroups:
-             - !GetAtt SecurityGroup.GroupId
+             - !GetAtt TaskSecurityGroup.GroupId
           Subnets: !Ref Subnets
-      # Role: String
       SchedulingStrategy: REPLICA
-      ServiceName: !Ref 'AWS::StackName'
       TaskDefinition: !Ref TaskDefinition
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -351,10 +352,10 @@ Resources:
           PortMappings:
             -
               ContainerPort: 80
-  SecurityGroup:
+  LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow HTTP in
+      GroupDescription: Allow HTTP from anywhere
       VpcId: !Ref VpcId
       SecurityGroupEgress:
         -
@@ -368,3 +369,55 @@ Resources:
           IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from Load Balancer
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        -
+          CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+      SecurityGroupIngress:
+        -
+          SourceSecurityGroupId: !GetAtt LoadBalancerSecurityGroup.GroupId
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Type: application
+      Scheme: internet-facing
+      IpAddressType: ipv4
+      Subnets: !Ref Subnets
+      SecurityGroups:
+        - !GetAtt LoadBalancerSecurityGroup.GroupId
+      LoadBalancerAttributes:
+        -
+          Key: idle_timeout.timeout_seconds
+          Value: 10
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        -
+          Type: forward
+          TargetGroupArn: !Ref TargetGroup
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Ref 'AWS::StackName'
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      TargetGroupAttributes:
+        -
+          Key: deregistration_delay.timeout_seconds
+          Value: 10

@@ -3,6 +3,14 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 Description: Pipeline to deploy Docker container
 
+Parameters:
+  VpcId:
+    Description: Virtual Private Cloud to run containers in
+    Type: AWS::EC2::VPC::Id
+  Subnets:
+    Description: Multiple public subnets to run containers in
+    Type: List<AWS::EC2::Subnet::Id>
+
 Resources:
   PipelineRole:
     Type: AWS::IAM::Role
@@ -200,6 +208,8 @@ Resources:
                 ProjectName: !Ref BuildProject
               InputArtifacts:
                 - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
         -
           Name: Deploy
           Actions:
@@ -211,8 +221,10 @@ Resources:
                 Version: 1
                 Provider: ECS
               Configuration:
-                ClusterName: cluster
-                ServiceName: test
+                ClusterName: !Ref Cluster
+                ServiceName: !GetAtt Service.Name
+              InputArtifacts:
+                - Name: BuildArtifact
   BuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -255,3 +267,68 @@ Resources:
                 - echo Build completed on `date`
                 - docker push $REPOSITORY_URI:latest
                 - docker push $REPOSITORY_URI:$IMAGE_TAG
+                - printf '[{"name":"%s","imageUri":"%s"}]' $APPLICATION_NAME $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+          artifacts:
+              files:
+                - imagedefinitions.json
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref 'AWS::StackName'
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 2
+      # HealthCheckGracePeriodSeconds: Integer
+      LaunchType: FARGATE
+      # LoadBalancers:
+        # - Load Balancer Objects, ...
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+             - !GetAtt SecurityGroup.GroupId
+          Subnets: !Ref Subnets
+      # Role: String
+      SchedulingStrategy: REPLICA
+      ServiceName: !Ref 'AWS::StackName'
+      TaskDefinition: !Ref TaskDefinition
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref 'AWS::StackName'
+      Cpu: 256
+      Memory: 512
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: 'arn:aws:iam::312701731826:role/ecsTaskExecutionRole' # TODO: replace
+      ContainerDefinitions:
+        -
+          Name: !Ref 'AWS::StackName'
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DockerRepository}:latest'
+          Memory: 512
+          PortMappings:
+            -
+              ContainerPort: 80
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP in
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        -
+          CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+      SecurityGroupIngress:
+        -
+          CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80

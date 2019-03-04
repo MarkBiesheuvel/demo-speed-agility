@@ -1,2 +1,5 @@
 
-# Demo 3: Automatically deploy Docker on ECS
+Demo 3: Automatically deploying Docker on ECS
+==
+
+...

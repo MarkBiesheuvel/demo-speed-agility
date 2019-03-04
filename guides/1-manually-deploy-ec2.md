@@ -1,11 +1,16 @@
 
-# Demo 1: Manualy deploying on EC2
+Demo 1: Manually deploying on EC2
+==
 
-## Go through the EC2 launch wizard.
+
+Go through the EC2 launch wizard.
+--
 
 Select the Amazon Linux 2 AMI, select a public subnet and a security group that allows HTTP from anywhere.
 
-## Configure the EC2 instance
+
+Configure the EC2 instance
+--
 
 Login via SSH or via SSM Session Manager
 
@@ -39,6 +44,8 @@ Run the webserver on port 80
 gunicorn -w 4 app:app -b 0.0.0.0:80
 ```
 
-## Visit the webpage
+
+Visit the webpage
+--
 
 Open the public IP address of the EC2 instance in your browser.

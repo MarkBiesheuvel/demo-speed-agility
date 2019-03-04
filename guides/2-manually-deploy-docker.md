@@ -1,7 +1,9 @@
 
-# Demo 2: Automatically deploy with Docker on ECS
+Demo 2: Manually deploying with Docker on ECS
+==
 
-## Build the container on local machine
+Build the container on local machine
+--
 
 Run build command in `source` directory.
 ```bash
@@ -14,7 +16,8 @@ docker run -p 0:80 -d speed-agility
 docker ps
 ```
 
-## Push to ECR
+Push to ECR
+--
 
 Login to ECR.
 ```bash
@@ -30,3 +33,8 @@ Push the image. Fill in `account_id` and `region`.
 ```bash
 docker push {account_id}.dkr.ecr.{region}.amazonaws.com/speed-agility:latest
 ```
+
+Deploy a new task
+--
+
+...

@@ -10,6 +10,10 @@ Parameters:
   Subnets:
     Description: Multiple public subnets to run containers in
     Type: List<AWS::EC2::Subnet::Id>
+  DesiredCount:
+    Description: Number of containers to run in the cluster. (Keep 0 during creation)
+    Type: Number
+    Default: 0
 
 Resources:
   PipelineRole:
@@ -313,13 +317,15 @@ Resources:
       ClusterName: !Ref 'AWS::StackName'
   Service:
     Type: AWS::ECS::Service
+    DependsOn:
+      - Listener
     Properties:
       Cluster: !Ref Cluster
       LaunchType: FARGATE
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 100
-      DesiredCount: 2
+      DesiredCount: !Ref DesiredCount
       HealthCheckGracePeriodSeconds: 10
       LoadBalancers:
         -

@@ -1,14 +1,15 @@
 <!doctype html>
 <html lang="en-US">
-  <title>Demo - Speed & Agility</title>
+  <title>Instance Metadata and User Data</title>
   <body>
-    <h1>Users</h1>
+    <h1>{{ path }}</h1>
     <ul>
-      {% for id, user in users %}
+      {% for link in links %}
       <li>
-        <a href="/{{ id }}">{{ user.name }}</a>
+        <a href="{{ path }}{{ link }}">{{ link }}</a>
       </li>
       {% endfor %}
     </ul>
+    Source: <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-metadata.html">AWS EC2 UserGuide</a>
   </body>
 </html>

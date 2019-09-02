@@ -1,34 +1,26 @@
 from flask import Flask, render_template, abort
 import os
 import json
+import requests
 
 # Start the app
 app = Flask(__name__)
 
-# Load users from file (imagine this is a database connection)
-users_file = os.path.join(
-    os.getcwd(),
-    os.path.dirname(__file__),
-    'data',
-    'users.json'
-)
-users = json.loads(open(users_file).read())
+# Catch all requests
+@app.route('/', defaults={'path': None})
+@app.route('/<path:path>')
+def catch_all(path):
+    path = '/{}/'.format(path) if path is not None else '/'
+    response = requests.get('http://169.254.169.254{}'.format(path))
 
-
-# Website root, showing an overview of all users
-@app.route('/')
-def index():
-    return render_template('index.html', users=enumerate(users))
-
-
-@app.route('/<int:id>')
-def user(id):
-    # User not found
-    if id < 0 or len(users) <= id:
-        abort(404)
-
-    return render_template('user.html', user=users[id])
-
+    return render_template(
+        'index.html',
+        path=path,
+        links=[
+            link.rstrip('/')
+            for link in  response.text.split('\n')
+        ]
+    )
 
 if __name__ == "__main__":
     app.run()

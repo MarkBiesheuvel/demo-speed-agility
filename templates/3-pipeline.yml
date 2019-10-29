@@ -7,8 +7,11 @@ Parameters:
   VpcId:
     Description: Virtual Private Cloud to run containers in
     Type: AWS::EC2::VPC::Id
-  Subnets:
-    Description: Multiple public subnets to run containers in
+  PublicSubnetIds:
+    Description: Multiple public subnets to run load balancer in
+    Type: List<AWS::EC2::Subnet::Id>
+  PrivateSubnetIds:
+    Description: Multiple private subnets to run containers in
     Type: List<AWS::EC2::Subnet::Id>
   DesiredCount:
     Description: Number of containers to run in the cluster. (Keep 0 during creation)
@@ -372,10 +375,10 @@ Resources:
           TargetGroupArn: !Ref TargetGroup
       NetworkConfiguration:
         AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
+          AssignPublicIp: DISABLED
           SecurityGroups:
              - !GetAtt TaskSecurityGroup.GroupId
-          Subnets: !Ref Subnets
+          Subnets: !Ref PrivateSubnetIds
       SchedulingStrategy: REPLICA
       TaskDefinition: !Ref TaskDefinition
   TaskDefinition:
@@ -436,7 +439,7 @@ Resources:
       Type: application
       Scheme: internet-facing
       IpAddressType: ipv4
-      Subnets: !Ref Subnets
+      Subnets: !Ref PublicSubnetIds
       SecurityGroups:
         - !GetAtt LoadBalancerSecurityGroup.GroupId
       LoadBalancerAttributes:

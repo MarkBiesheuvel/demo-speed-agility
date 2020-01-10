@@ -459,7 +459,6 @@ Resources:
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Ref 'AWS::StackName'
       Port: 80
       Protocol: HTTP
       TargetType: ip

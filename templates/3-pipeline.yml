@@ -3,22 +3,74 @@ AWSTemplateFormatVersion: '2010-09-09'
 
 Description: Pipeline to deploy Docker container
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterLabels:
+      VpcId:
+        default: 'Which Virtual Private Network to use?'
+      PublicSubnetIds:
+        default: 'Where to create the Application Load Balancer?'
+      PrivateSubnetIds:
+        default: 'Where to launch the EC2 instances?'
+      DesiredCount:
+        default: 'How many containers to run?'
+    ParameterGroups:
+      -
+        Label:
+          default: 'Network Configuration'
+        Parameters:
+          - VpcId
+          - PublicSubnetIds
+          - PrivateSubnetIds
+      -
+        Label:
+          default: 'Container Configuration'
+        Parameters:
+          - DesiredCount
+      -
+        Label:
+          default: 'Optional Configuration'
+        Parameters:
+          - CertificateArn
+          - HostedZoneName
+
 Parameters:
+
   VpcId:
     Description: Virtual Private Cloud to run containers in
     Type: AWS::EC2::VPC::Id
+
   PublicSubnetIds:
     Description: Multiple public subnets to run load balancer in
     Type: List<AWS::EC2::Subnet::Id>
+
   PrivateSubnetIds:
     Description: Multiple private subnets to run containers in
     Type: List<AWS::EC2::Subnet::Id>
+
   DesiredCount:
     Description: Number of containers to run in the cluster. (Keep 0 during creation)
     Type: Number
     Default: 0
 
+  CertificateArn:
+    Type: String
+    Default: ''
+
+  HostedZoneName:
+    Type: String # AWS::Route53::HostedZone::Id
+    Default: ''
+
+Conditions:
+  CreatePlainTextListener:
+    !Equals [!Ref 'CertificateArn', '']
+  CreateSecureListener:
+    !Not [!Equals [!Ref 'CertificateArn', '']]
+  CreateDnsRecord:
+    !Not [!Equals [!Ref 'HostedZoneName', '']]
+
 Resources:
+
   PipelineRole:
     Type: AWS::IAM::Role
     Properties:
@@ -69,6 +121,7 @@ Resources:
                 Action:
                   - 'ecr:DescribeImages'
                   - 'ecs:*'
+
   BuildRole:
     Type: AWS::IAM::Role
     Properties:
@@ -120,6 +173,7 @@ Resources:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
+
   TriggerRole:
     Type: AWS::IAM::Role
     Properties:
@@ -141,6 +195,7 @@ Resources:
                 Effect: Allow
                 Resource: '*'
                 Action: codepipeline:StartPipelineExecution
+
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -177,16 +232,20 @@ Resources:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
+
   ArtifactBucket:
     Type: AWS::S3::Bucket
+
   GitRepository:
     Type: AWS::CodeCommit::Repository
     Properties:
       RepositoryName: !Ref 'AWS::StackName'
+
   DockerRepository:
     Type: AWS::ECR::Repository
     Properties:
       RepositoryName: !Ref 'AWS::StackName'
+
   Trigger:
     Type: AWS::Events::Rule
     Properties:
@@ -211,6 +270,7 @@ Resources:
           Id: pipeline
           Arn: !Sub 'arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${Pipeline}'
           RoleArn: !GetAtt TriggerRole.Arn
+
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
@@ -282,6 +342,7 @@ Resources:
                 ServiceName: !GetAtt Service.Name
               InputArtifacts:
                 - Name: BuildArtifact
+
   TestProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -306,6 +367,7 @@ Resources:
             build:
               commands:
                 - pytest -v
+
   BuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -352,14 +414,16 @@ Resources:
           artifacts:
               files:
                 - imagedefinitions.json
+
   Cluster:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: !Ref 'AWS::StackName'
+
   Service:
     Type: AWS::ECS::Service
     DependsOn:
-      - Listener
+      - PlainTextListener
     Properties:
       Cluster: !Ref Cluster
       LaunchType: FARGATE
@@ -381,6 +445,7 @@ Resources:
           Subnets: !Ref PrivateSubnetIds
       SchedulingStrategy: REPLICA
       TaskDefinition: !Ref TaskDefinition
+
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -399,40 +464,36 @@ Resources:
           PortMappings:
             -
               ContainerPort: 80
+
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow HTTP from anywhere
       VpcId: !Ref VpcId
-      SecurityGroupEgress:
-        -
-          CidrIp: 0.0.0.0/0
-          IpProtocol: -1
-          FromPort: -1
-          ToPort: -1
       SecurityGroupIngress:
         -
           CidrIp: 0.0.0.0/0
           IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+        -
+          CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+
   TaskSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Allow HTTP from Load Balancer
       VpcId: !Ref VpcId
-      SecurityGroupEgress:
-        -
-          CidrIp: 0.0.0.0/0
-          IpProtocol: -1
-          FromPort: -1
-          ToPort: -1
       SecurityGroupIngress:
         -
           SourceSecurityGroupId: !GetAtt LoadBalancerSecurityGroup.GroupId
           IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -446,16 +507,7 @@ Resources:
         -
           Key: idle_timeout.timeout_seconds
           Value: 10
-  Listener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !Ref LoadBalancer
-      Port: 80
-      Protocol: HTTP
-      DefaultActions:
-        -
-          Type: forward
-          TargetGroupArn: !Ref TargetGroup
+
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -467,3 +519,51 @@ Resources:
         -
           Key: deregistration_delay.timeout_seconds
           Value: 10
+
+  PlainTextListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        -
+          !If
+            - CreatePlainTextListener
+            -
+              Type: forward
+              TargetGroupArn: !Ref TargetGroup
+            -
+              Type: redirect
+              RedirectConfig:
+                Port: 443
+                Protocol: HTTPS
+                StatusCode: HTTP_302
+
+  SecureListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateSecureListener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-FS-1-2-2019-08
+      Certificates:
+        -
+          CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        -
+          Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateDnsRecord
+    Properties:
+      Type: A
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Sub '${AWS::StackName}.${HostedZoneName}'
+      AliasTarget:
+        DNSName: !GetAtt LoadBalancer.DNSName
+        HostedZoneId:  !GetAtt LoadBalancer.CanonicalHostedZoneID
+        EvaluateTargetHealth: True

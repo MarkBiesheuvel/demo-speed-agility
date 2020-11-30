@@ -371,7 +371,7 @@ Resources:
         Type: CODEPIPELINE
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/python:3.7.1-1.7.0
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
         PrivilegedMode: True
         Type: LINUX_CONTAINER
       VpcConfig:
@@ -385,6 +385,8 @@ Resources:
           version: 0.2
           phases:
             install:
+              runtime-versions:
+                python: 3.8
               commands:
                 - pip install -r source/requirements.txt
                 - pip install -r tests/requirements.txt
@@ -401,7 +403,7 @@ Resources:
         Type: CODEPIPELINE
       Environment:
         ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/docker:18.09.0-1.7.0
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:3.0
         PrivilegedMode: True
         Type: LINUX_CONTAINER
         EnvironmentVariables:
@@ -409,6 +411,10 @@ Resources:
             Type: PLAINTEXT
             Name: APPLICATION_NAME
             Value: !Ref 'AWS::StackName'
+          -
+            Type: PLAINTEXT
+            Name: ECR_URI
+            Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com'
           -
             Type: PLAINTEXT
             Name: REPOSITORY_URI
@@ -425,7 +431,7 @@ Resources:
           phases:
             pre_build:
               commands:
-                - $(aws ecr get-login --no-include-email)
+                - aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_URI
                 - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
                 - IMAGE_TAG=${COMMIT_HASH:=latest}
             build:

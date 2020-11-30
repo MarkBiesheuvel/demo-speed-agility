@@ -173,6 +173,25 @@ Resources:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
+              -
+                Effect: Allow
+                Resource: '*'
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeDhcpOptions
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+              -
+                Effect: Allow
+                Resource: !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*'
+                Action:
+                  - ec2:CreateNetworkInterfacePermission
+                Condition:
+                  StringEquals:
+                    ec2:AuthorizedService: codebuild.amazonaws.com
 
   TriggerRole:
     Type: AWS::IAM::Role
@@ -355,6 +374,11 @@ Resources:
         Image: aws/codebuild/python:3.7.1-1.7.0
         PrivilegedMode: True
         Type: LINUX_CONTAINER
+      VpcConfig:
+        VpcId: !Ref VpcId
+        Subnets: !Ref PrivateSubnetIds
+        SecurityGroupIds:
+          - !Ref CodeBuildSecurityGroup
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -389,6 +413,11 @@ Resources:
             Type: PLAINTEXT
             Name: REPOSITORY_URI
             Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${DockerRepository}'
+      VpcConfig:
+        VpcId: !Ref VpcId
+        Subnets: !Ref PrivateSubnetIds
+        SecurityGroupIds:
+          - !Ref CodeBuildSecurityGroup
       Source:
         Type: CODEPIPELINE
         BuildSpec: |
@@ -493,6 +522,12 @@ Resources:
           IpProtocol: tcp
           FromPort: 80
           ToPort: 80
+
+  CodeBuildSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow nothing inbound
+      VpcId: !Ref VpcId
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
